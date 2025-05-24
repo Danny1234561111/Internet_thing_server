@@ -44,6 +44,11 @@ def get_db():
     finally:
         db.close()
 
+# Новый маршрут для корня
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the FastAPI server!"}
+
 @app.post("/register", response_model=RegisterResponse)
 def register_user(data: RegisterRequest, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.login == data.login).first()
@@ -57,7 +62,7 @@ def register_user(data: RegisterRequest, db: Session = Depends(get_db)):
     return RegisterResponse(api_key=api_key)
 
 # Получение данных пользователя по api_key в заголовке
-@app.get("/user", response_model=UserDataResponse)
+@app.get("/user", response_model=User DataResponse)
 def get_user_data(x_api_key: str = Header(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.api_key == x_api_key).first()
     if not user:
