@@ -62,7 +62,7 @@ def register_user(data: RegisterRequest, db: Session = Depends(get_db)):
     return RegisterResponse(api_key=api_key)
 
 # Получение данных пользователя по api_key в заголовке
-@app.get("/user", response_model=User DataResponse)  # Исправлено здесь
+@app.get("/user", response_model=UserDataResponse)  # Исправлено здесь
 def get_user_data(x_api_key: str = Header(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.api_key == x_api_key).first()
     if not user:
