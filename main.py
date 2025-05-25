@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from pydantic import BaseModel, constr
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, Session
@@ -8,7 +8,6 @@ from datetime import datetime
 import threading
 from passlib.context import CryptContext
 import logging
-
 # Настройки базы данных
 DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -17,6 +16,8 @@ Base = declarative_base()
 
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# Настройка хеширования паролей
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -26,6 +27,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)
+    devices = relationship("Device", back_populates="owner")
 
 
 class Device(Base):
@@ -38,8 +40,11 @@ class Device(Base):
     pin_change_key = Column(String, nullable=False)
     active = Column(Boolean, default=True)
     alarm_enabled = Column(Boolean, default=True)
+    last_accel_event = Column(DateTime, nullable=True)
+    last_sound_event = Column(DateTime, nullable=True)
 
-    owner = relationship("User ")
+    owner = relationship("User", back_populates="devices")
+    logs = relationship("DeviceLog", back_populates="device")
 
 
 class DeviceLog(Base):
@@ -49,6 +54,8 @@ class DeviceLog(Base):
     event_type = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
     info = Column(String, nullable=True)
+
+    device = relationship("Device", back_populates="logs")
 
 
 Base.metadata.create_all(bind=engine)
@@ -66,16 +73,6 @@ class UserOut(BaseModel):
 
     class Config:
         orm_mode = True
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str
 
 
 class DeviceCreate(BaseModel):
@@ -151,10 +148,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 # --- Регистрация пользователя ---
 logger = logging.getLogger(__name__)
-
-
 @app.post("/register", response_model=UserOut)
-
 def register(user: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == user.username).first()
     if existing:
@@ -163,13 +157,25 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     hashed_password = hash_password(user.password)
     new_user = User(username=user.username, password=hashed_password)
 
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error during user registration: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
     return new_user
 
 
 # --- Аутентификация ---
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 @app.post("/token", response_model=TokenResponse)
 def login(login_request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == login_request.username).first()
@@ -222,7 +228,6 @@ def check_pin(device_id: int, req: PinCheckRequest, current_user: User = Depends
         raise HTTPException(status_code=404, detail="Device not found")
     if not device.active:
         raise HTTPException(status_code=400, detail="Device inactive, PIN check not allowed")
-
     correct = (req.pin_code == device.pin_code)
     log = DeviceLog(device_id=device.id, event_type="pin_check", info=f"PIN correct: {correct}")
     db.add(log)
@@ -239,7 +244,6 @@ def change_pin(req: PinChangeRequest, current_user: User = Depends(get_current_u
         raise HTTPException(status_code=400, detail="Old PIN incorrect")
     if device.pin_change_key != req.pin_change_key:
         raise HTTPException(status_code=400, detail="Invalid pin_change_key")
-
     device.pin_code = req.new_pin
     db.commit()
     log = DeviceLog(device_id=device.id, event_type="pin_change", info="PIN changed")
@@ -256,12 +260,22 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Device not found")
     if not device.active:
         raise HTTPException(status_code=400, detail="Device inactive")
-
     now = event.timestamp or datetime.utcnow()
+
     if event.event_type == "accel":
+        device.last_accel_event = now
         db.add(DeviceLog(device_id=device.id, event_type="accel_open", timestamp=now))
+        db.commit()
     elif event.event_type == "sound":
+        device.last_sound_event = now
         db.add(DeviceLog(device_id=device.id, event_type="sound_enter", timestamp=now))
+        db.commit()
+        if device.alarm_enabled and device.last_accel_event:
+            delta = (now - device.last_accel_event).total_seconds()
+            if 0 <= delta <= 60:
+                db.add(DeviceLog(device_id=device.id, event_type="intrusion_detected", timestamp=now,
+                                 info="Motion detected after door opened"))
+                db.commit()
     else:
         raise HTTPException(status_code=400, detail="Unknown event_type")
 
@@ -275,13 +289,11 @@ def get_logs(req: LogsRequest, current_user: User = Depends(get_current_user), d
     device = db.query(Device).filter(Device.unique_key == req.unique_key, Device.owner_id == current_user.id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-
     query = db.query(DeviceLog).filter(DeviceLog.device_id == device.id)
     if req.start_time:
         query = query.filter(DeviceLog.timestamp >= req.start_time)
     if req.end_time:
         query = query.filter(DeviceLog.timestamp <= req.end_time)
-
     logs = query.order_by(DeviceLog.timestamp.desc()).all()
     return logs
 
