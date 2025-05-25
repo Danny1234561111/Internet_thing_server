@@ -7,9 +7,9 @@ from typing import List, Optional
 from datetime import datetime
 import threading
 from passlib.context import CryptContext
-
+import logging
 # Настройки базы данных
-DATABASE_URL = "sqlite:///./alarm_system.db"
+DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
@@ -43,7 +43,7 @@ class Device(Base):
     last_accel_event = Column(DateTime, nullable=True)
     last_sound_event = Column(DateTime, nullable=True)
 
-    owner = relationship("User ", back_populates="devices")
+    owner = relationship("User", back_populates="devices")
     logs = relationship("DeviceLog", back_populates="device")
 
 
@@ -147,8 +147,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 # --- Регистрация пользователя ---
+logger = logging.getLogger(__name__)
 @app.post("/register", response_model=UserOut)
-
 def register(user: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == user.username).first()
     if existing:
@@ -157,9 +157,14 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     hashed_password = hash_password(user.password)
     new_user = User(username=user.username, password=hashed_password)
 
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error during user registration: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
     return new_user
 
