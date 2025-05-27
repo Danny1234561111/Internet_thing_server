@@ -93,6 +93,7 @@ class DeviceOut(BaseModel):
 
 class PinCheckRequest(BaseModel):
     pin_code: constr(min_length=4, max_length=4)
+    unique_key: str
 
 class PinChangeRequest(BaseModel):
     unique_key: str
@@ -230,16 +231,18 @@ def list_devices(current_user: User = Depends(get_current_user), db: Session = D
 
 
 @app.post("/devices/check_pin")
-def check_pin(req: PinCheckRequest, unique_key: str, db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.unique_key == unique_key).first()
+def check_pin(req: PinCheckRequest, db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.unique_key == req.unique_key).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
     correct = req.pin_code == device.pin_code
     current_time = datetime.utcnow()
-
+    if (correct):
     # Логируем событие pin_check
-    log = DeviceLog(device_id=device.id, event_type="pin_check", timestamp=current_time, info=f"PIN correct: {correct}")
+        log = DeviceLog(device_id=device.id, event_type="pin_check", timestamp=current_time, info=f"PIN correct: {correct}")
+    else:
+        return {"info":f"PIN correct: {correct}"}
     db.add(log)
     db.commit()
 
@@ -269,25 +272,30 @@ def change_device_password(req: ChangePasswordRequest, current_user: User = Depe
     device.pin_code = req.new_password
     db.commit()
     return {"status": "Password changed successfully"}
+@app.get("/devices/{unique_key}/pin_checks/")
+def get_pin_checks(key: LogsRequest, db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.unique_key == key.unique_key).first()
+    pin_checks = db.query(DeviceLog).filter(
+        DeviceLog.device_id ==device.id,
+        DeviceLog.event_type == 'pin_check'
+    ).all()
 
+    if not pin_checks:
+        return {"message": "Sorry, no pin_check events found for this device."}  # Возвращаем сообщение вместо ошибки
+
+    return pin_checks
 @app.post("/devices/disarm")
 def disarm_device(key: LogsRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.unique_key == key.unique_key).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-
-    # Логируем событие pin_check с info, что отключение по пользователю
     current_time = datetime.utcnow()
-    log = DeviceLog(
-        device_id=device.id,
-        event_type="pin_check",
-        timestamp=current_time,
-        info=f"Disarmed by user {current_user.username}"
-    )
+    log = DeviceLog(device_id=device.id, event_type="pin_check", timestamp=current_time,
+                        info=f"PIN correct: {True}")
     db.add(log)
     db.commit()
-
-    return {"status": "device disarmed", "user": current_user.username}
+    db.commit()
+    return {'pin_valid': True}
 @app.post("/events/")
 def post_event(event: EventPost, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.unique_key == event.unique_key).first()
@@ -301,34 +309,33 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
 
     # Проверяем, если событие 'move'
     if event.event_type == 'move':
-        # Проверяем, было ли событие 'danger' за последние 5 минут
         recent_danger = db.query(DeviceLog).filter(
             DeviceLog.device_id == device.id,
             DeviceLog.event_type == 'danger',
             DeviceLog.timestamp >= current_time - timedelta(minutes=5)
         ).first()
 
-        # Проверяем, было ли событие 'pin_check' за последние 3 минуты
         recent_pin_check = db.query(DeviceLog).filter(
             DeviceLog.device_id == device.id,
             DeviceLog.event_type == 'pin_check',
             DeviceLog.timestamp >= current_time - timedelta(minutes=3)
         ).first()
 
-        # Если событие 'danger' не было зарегистрировано недавно и 'pin_check' не произошло за 3 минуты
+        print("Recent Danger:", recent_danger)
+        print("Recent Pin Check:", recent_pin_check)
+
         if not recent_danger and not recent_pin_check:
-            # Находим последнее событие 'accel' для этого устройства
             recent_accel = db.query(DeviceLog).filter(
                 DeviceLog.device_id == device.id,
                 DeviceLog.event_type == 'accel',
-                DeviceLog.timestamp >= current_time - timedelta(minutes=5)  # Проверяем за последние 5 минут
+                DeviceLog.timestamp >= current_time - timedelta(minutes=5)
             ).first()
 
             if recent_accel:
-                # Если 'accel' найдено, добавляем событие 'danger'
                 danger_log = DeviceLog(device_id=device.id, event_type='danger', timestamp=current_time)
                 db.add(danger_log)
                 db.commit()
+                print("Danger event added")
 
     return {"status": "event recorded"}
 

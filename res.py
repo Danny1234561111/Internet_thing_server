@@ -40,9 +40,8 @@ def list_devices(token):
 def check_pin(unique_key, pin_code):
     url = f"{BASE_URL}/devices/check_pin"
     headers = {}
-    params = {"unique_key": unique_key}
-    data = {"pin_code": pin_code}
-    resp = requests.post(url, json=data, params=params, headers=headers)
+    data = {"unique_key": unique_key,"pin_code": pin_code}
+    resp = requests.post(url, json=data, headers=headers)
     print("Check PIN:", resp.status_code, resp.json())
     return resp
 
@@ -83,6 +82,14 @@ def get_logs(unique_key):
     resp = requests.get(url, json=data, headers=headers)
     print("Get logs:", resp.status_code, resp.json())
     return resp
+def get_pin_checks(unique_key):
+    url = f"{BASE_URL}/devices/{unique_key}/pin_checks/"
+    headers = {}
+    data = {"unique_key": unique_key}
+    resp = requests.get(url, json=data, headers=headers)
+    if resp.status_code == 200:
+        print(f"Pin check events for {unique_key}:", resp.json())
+    return resp
 
 if __name__ == "__main__":
     # 1. Регистрация пользователя
@@ -94,21 +101,24 @@ if __name__ == "__main__":
         exit(1)
 
     # 3. Добавление устройства
-    add_device(token,"device_key_123")
+    add_device(token,"device_key_456")
 
     # 4. Получение списка устройств
     list_devices(token)
 
     # 5. Проверка PIN-кода
-    check_pin("device_key_123", "4321")
+    # check_pin("device_key_456", "0000")
 
     # 6. Изменение PIN-кода
-    change_pin(token, "device_key_123", "4321", "4321")
-    disarm(token, "device_key_123")
+    change_pin(token, "device_key_456", "0000", "0000")
 
     # 8. Отправка события
-    post_event("device_key_123", "accel")
-    post_event("device_key_123", "move")
+    post_event("device_key_456", "accel")
+    disarm(token, "device_key_456")
+    post_event("device_key_456", "move")
 
     # 9. Получение логов
-    get_logs("device_key_123")
+    get_logs("device_key_456")
+
+    get_logs("device_key_456")
+    get_pin_checks("device_key_456")
