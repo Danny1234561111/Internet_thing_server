@@ -64,6 +64,9 @@ Base.metadata.create_all(bind=engine)
 class UserCreate(BaseModel):
     username: str
     password: str
+class UserLogin(BaseModel):
+    username: str
+    password: str
 class DeviceKeyRequest(BaseModel):
     unique_key: str
 
