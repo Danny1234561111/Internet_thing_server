@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, DateTime
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, DateTime, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from pydantic import BaseModel, constr
@@ -8,8 +8,6 @@ from typing import List, Optional
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-import threading
-import logging
 
 # --- Конфигурация ---
 DATABASE_URL = "sqlite:///./test.db"
@@ -18,20 +16,25 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # --- Инициализация БД ---
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})  # Для SQLite
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- Логгер ---
-logger = logging.getLogger(__name__)
+# --- Ассоциация многие-ко-многим ---
+user_device_association = Table(
+    'user_device',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('device_id', Integer, ForeignKey('devices.id'), primary_key=True)
+)
 
-# --- Модели SQLAlchemy ---
+# --- Модели ---
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    devices = relationship("Device", back_populates="owner")
+    devices = relationship("Device", secondary=user_device_association, back_populates="owners")
 
 class Device(Base):
     __tablename__ = "devices"
@@ -39,13 +42,8 @@ class Device(Base):
     name = Column(String, index=True, nullable=False)
     unique_key = Column(String, unique=True, index=True, nullable=False)
     pin_code = Column(String(4), nullable=False)
-    pin_change_key = Column(String, nullable=False)
     active = Column(Boolean, default=True)
-    alarm_enabled = Column(Boolean, default=True)
-    last_accel_event = Column(DateTime, nullable=True)
-    last_sound_event = Column(DateTime, nullable=True)
-    owner_id = Column(Integer, ForeignKey("users.id"))
-    owner = relationship("User", back_populates="devices")
+    owners = relationship("User", secondary=user_device_association, back_populates="devices")
     logs = relationship("DeviceLog", back_populates="device")
 
 class DeviceLog(Base):
@@ -57,24 +55,20 @@ class DeviceLog(Base):
     info = Column(String, nullable=True)
     device = relationship("Device", back_populates="logs")
 
-# --- Создание таблиц ---
 Base.metadata.create_all(bind=engine)
 
 # --- Pydantic модели ---
 class UserCreate(BaseModel):
     username: str
     password: str
+
 class UserLogin(BaseModel):
     username: str
     password: str
-class DeviceKeyRequest(BaseModel):
-    unique_key: str
-
 
 class UserOut(BaseModel):
     id: int
     username: str
-
     class Config:
         orm_mode = True
 
@@ -85,22 +79,15 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-class DeviceCreate(BaseModel):
-    name: str
+class DeviceUpdate(BaseModel):
     unique_key: str
-    pin_code: constr(min_length=4, max_length=4)
-    pin_change_key: str
 
 class DeviceOut(BaseModel):
     id: int
     name: str
     unique_key: str
     pin_code: str
-    pin_change_key: str
     active: bool
-    alarm_enabled: bool
-    owner_id: Optional[int]
-
     class Config:
         orm_mode = True
 
@@ -111,7 +98,6 @@ class PinChangeRequest(BaseModel):
     unique_key: str
     old_pin: constr(min_length=4, max_length=4)
     new_pin: constr(min_length=4, max_length=4)
-    pin_change_key: str
 
 class ChangePasswordRequest(BaseModel):
     unique_key: str
@@ -122,21 +108,13 @@ class EventPost(BaseModel):
     unique_key: str
     event_type: str
 
-class AlarmToggleRequest(BaseModel):
-    unique_key: str
-    pin_code: Optional[constr(min_length=4, max_length=4)] = None
-    pin_change_key: Optional[str] = None
-
 class LogsRequest(BaseModel):
     unique_key: str
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
 
 class LogsResponse(BaseModel):
     event_type: str
     timestamp: datetime
     info: Optional[str]
-
     class Config:
         orm_mode = True
 
@@ -170,9 +148,7 @@ def get_user_by_username(db: Session, username: str):
 
 def authenticate_user(db: Session, username: str, password: str):
     user = get_user_by_username(db, username)
-    if not user:
-        return False
-    if not verify_password(password, user.hashed_password):
+    if not user or not verify_password(password, user.hashed_password):
         return False
     return user
 
@@ -195,29 +171,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     return user
 
-# --- Инициализация начальных данных ---
+# --- Инициализация начальных устройств ---
 def init_devices(db: Session):
-    existing = db.query(Device).count()
-    if existing == 0:
-        device1 = Device(
-            name="Device device_key_123",
-            unique_key="device_key_123",
-            pin_code="0000",
-            pin_change_key="change_key_abc",
-            active=True,
-            alarm_enabled=True,
-            owner_id=None
-        )
-        device2 = Device(
-            name="Device device_key_456",
-            unique_key="device_key_456",
-            pin_code="0000",
-            pin_change_key="change_key_def",
-            active=True,
-            alarm_enabled=True,
-            owner_id=None
-        )
-        db.add_all([device1, device2])
+    if db.query(Device).count() == 0:
+        devices = [
+            Device(name="Device device_key_123", unique_key="device_key_123", pin_code="0000"),
+            Device(name="Device device_key_456", unique_key="device_key_456", pin_code="0000"),
+        ]
+        db.add_all(devices)
         db.commit()
 
 # --- FastAPI приложение ---
@@ -225,90 +186,66 @@ app = FastAPI()
 
 # --- Роуты ---
 
-# Регистрация пользователя
 @app.post("/users/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
-    user = get_user_by_username(db, user_in.username)
-    if user:
+    if get_user_by_username(db, user_in.username):
         raise HTTPException(status_code=400, detail="Username already registered")
     hashed_password = get_password_hash(user_in.password)
-    new_user = User(username=user_in.username, hashed_password=hashed_password)
-    db.add(new_user)
+    user = User(username=user_in.username, hashed_password=hashed_password)
+    db.add(user)
     db.commit()
-    db.refresh(new_user)
-    return new_user
+    db.refresh(user)
+    return user
 
-# Аутентификация и получение токена
 @app.post("/token", response_model=Token)
 def login_for_access_token(user_in: UserLogin, db: Session = Depends(get_db)):
     user = authenticate_user(db, user_in.username, user_in.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
+        raise HTTPException(status_code=401, detail="Incorrect username or password",
+                            headers={"WWW-Authenticate": "Bearer"})
+    access_token = create_access_token(data={"sub": user.username},
+                                       expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return {"access_token": access_token, "token_type": "bearer"}
 
-# Добавление устройства
-@app.post("/users/{user_id}/devices/", response_model=DeviceOut)
-def add_or_attach_device(
-    user_id: int,
-    req: DeviceKeyRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    # Проверяем, что текущий пользователь имеет право добавлять устройства для указанного пользователя
-    if current_user.id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to add devices for this user")
 
-    device = db.query(Device).filter(Device.unique_key == req.unique_key).first()
-    if not device:
-        raise HTTPException(status_code=404, detail="Device with this unique key not found")
+@app.post("/devices/", response_model=DeviceOut)
+def add_device(device_in: DeviceUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    existing_device = db.query(Device).filter(Device.unique_key == device_in.unique_key).first()
 
-    if device.owner_id is None:
-        device.owner_id = user_id  # Привязываем устройство к указанному пользователю
-        db.commit()
-        db.refresh(device)
-    elif device.owner_id != user_id:
-        raise HTTPException(status_code=400, detail="Device already assigned to another user")
+    if existing_device:
+        if current_user not in existing_device.owners:
+            existing_device.owners.append(current_user)
+            db.commit()
+            db.refresh(existing_device)
+        return existing_device
 
-    return device
+    # Если устройство не найдено — выдаём ошибку
+    raise HTTPException(status_code=400,
+                        detail="Device with this unique_key does not exist. Cannot create a new device.")
 
-# Получение списка устройств пользователя
+
 @app.get("/devices/", response_model=List[DeviceOut])
 def list_devices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    devices = db.query(Device).filter(Device.owner_id == current_user.id).all()
-    return devices
+    return current_user.devices
 
-# Проверка PIN-кода устройства
-@app.post("/devices/{device_id}/check_pin")
-def check_pin(device_id: int, req: PinCheckRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.id == device_id, Device.owner_id == current_user.id).first()
+@app.post("/devices/check_pin")
+def check_pin(req: PinCheckRequest, unique_key: str, db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.unique_key == unique_key).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    if not device.active:
-        raise HTTPException(status_code=400, detail="Device inactive, PIN check not allowed")
-    correct = (req.pin_code == device.pin_code)
+    correct = req.pin_code == device.pin_code
     log = DeviceLog(device_id=device.id, event_type="pin_check", info=f"PIN correct: {correct}")
     db.add(log)
     db.commit()
     return {"pin_valid": correct}
 
-# Изменение PIN-кода устройства
 @app.post("/devices/change_pin")
 def change_pin(req: PinChangeRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.unique_key == req.unique_key, Device.owner_id == current_user.id).first()
+    device = db.query(Device).filter(Device.unique_key == req.unique_key, Device.owners.any(id=current_user.id)).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     if device.pin_code != req.old_pin:
         raise HTTPException(status_code=400, detail="Old PIN incorrect")
-    if device.pin_change_key != req.pin_change_key:
-        raise HTTPException(status_code=400, detail="Invalid pin_change_key")
     device.pin_code = req.new_pin
     db.commit()
     log = DeviceLog(device_id=device.id, event_type="pin_change", info="PIN changed")
@@ -316,10 +253,9 @@ def change_pin(req: PinChangeRequest, current_user: User = Depends(get_current_u
     db.commit()
     return {"status": "PIN changed successfully"}
 
-# Изменение пароля устройства (альтернативная функция)
 @app.post("/devices/change_password")
 def change_device_password(req: ChangePasswordRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.unique_key == req.unique_key, Device.owner_id == current_user.id).first()
+    device = db.query(Device).filter(Device.unique_key == req.unique_key, Device.owners.any(id=current_user.id)).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     if req.old_password != device.pin_code:
@@ -328,101 +264,68 @@ def change_device_password(req: ChangePasswordRequest, current_user: User = Depe
     db.commit()
     return {"status": "Password changed successfully"}
 
-# Обработка событий с устройств
+
 @app.post("/events/")
 def post_event(event: EventPost, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.unique_key == event.unique_key).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    if not device.active:
-        raise HTTPException(status_code=400, detail="Device inactive")
 
-    now = datetime.utcnow()  # всегда текущее время сервера
+    # Получаем текущее время
+    current_time = datetime.utcnow()
+    log = DeviceLog(device_id=device.id, event_type=event.event_type, timestamp=current_time)
 
-    if event.event_type == "accel":
-        device.last_accel_event = now
-        db.add(DeviceLog(device_id=device.id, event_type="accel_open", timestamp=now))
-        db.commit()
-    elif event.event_type == "sound":
-        device.last_sound_event = now
-        db.add(DeviceLog(device_id=device.id, event_type="sound_enter", timestamp=now))
-        db.commit()
-        if device.alarm_enabled and device.last_accel_event:
-            delta = (now - device.last_accel_event).total_seconds()
-            if 0 <= delta <= 60:
-                db.add(DeviceLog(device_id=device.id, event_type="intrusion_detected", timestamp=now,
-                                 info="Motion detected after door opened"))
-                db.commit()
-    else:
-        raise HTTPException(status_code=400, detail="Unknown event_type")
-
+    # Сохраняем лог события
+    db.add(log)
     db.commit()
+
+    # Проверяем, если событие 'move'
+    if event.event_type == 'move':
+        # Проверяем, было ли событие 'danger' за последние 5 минут
+        recent_danger = db.query(DeviceLog).filter(
+            DeviceLog.device_id == device.id,
+            DeviceLog.event_type == 'danger',
+            DeviceLog.timestamp >= current_time - timedelta(minutes=5)
+        ).first()
+
+        # Если событие 'danger' не было зарегистрировано недавно, проверяем 'accel'
+        if not recent_danger:
+            # Находим последнее событие 'accel' для этого устройства
+            recent_accel = db.query(DeviceLog).filter(
+                DeviceLog.device_id == device.id,
+                DeviceLog.event_type == 'accel',
+                DeviceLog.timestamp >= current_time - timedelta(minutes=5)  # Проверяем за последние 5 минут
+            ).first()
+
+            if recent_accel:
+                # Если 'accel' найдено, добавляем событие 'danger'
+                danger_log = DeviceLog(device_id=device.id, event_type='danger', timestamp=current_time)
+                db.add(danger_log)
+                db.commit()
+
     return {"status": "event recorded"}
 
-# Получение логов устройства
-@app.post("/logs/", response_model=List[LogsResponse])
-def get_logs(req: LogsRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.unique_key == req.unique_key, Device.owner_id == current_user.id).first()
+@app.get("/logs/")
+def get_logs(key: LogsRequest, db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.unique_key == key.unique_key).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    query = db.query(DeviceLog).filter(DeviceLog.device_id == device.id)
-    if req.start_time:
-        query = query.filter(DeviceLog.timestamp >= req.start_time)
-    if req.end_time:
-        query = query.filter(DeviceLog.timestamp <= req.end_time)
-    logs = query.order_by(DeviceLog.timestamp.desc()).all()
+
+    # Получаем текущее время
+    current_time = datetime.utcnow()
+    # Получаем события 'danger' за последние 5 минут
+    logs = db.query(DeviceLog).filter(
+        DeviceLog.device_id == device.id,
+        DeviceLog.event_type == 'danger',
+        DeviceLog.timestamp >= current_time - timedelta(minutes=5)
+    ).all()
+
     return logs
 
-# Функция для автоматического повторного включения сигнализации
-def reenable_alarm_later(device_id: int, delay_sec=300):
-    def task():
-        db = SessionLocal()
-        try:
-            device = db.query(Device).filter(Device.id == device_id).first()
-            if device:
-                device.alarm_enabled = True
-                db.commit()
-        finally:
-            db.close()
 
-    threading.Timer(delay_sec, task).start()
 
-# Переключение состояния сигнализации устройства
-@app.post("/devices/toggle_alarm")
-def toggle_alarm(req: AlarmToggleRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.unique_key == req.unique_key, Device.owner_id == current_user.id).first()
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
-    if not device.active:
-        raise HTTPException(status_code=400, detail="Device inactive")
-
-    # Проверка PIN и pin_change_key
-    if req.pin_code:
-        if req.pin_code != device.pin_code:
-            raise HTTPException(status_code=400, detail="Invalid PIN")
-        if req.pin_change_key != device.pin_change_key:
-            raise HTTPException(status_code=400, detail="Invalid pin_change_key")
-    else:
-        if req.pin_change_key != device.pin_change_key:
-            raise HTTPException(status_code=400, detail="pin_change_key required to toggle alarm without PIN")
-
-    device.alarm_enabled = not device.alarm_enabled
-    db.add(DeviceLog(device_id=device.id,
-                     event_type="alarm_on" if device.alarm_enabled else "alarm_off",
-                     info=f"Alarm toggled by user {current_user.username}"))
-    db.commit()
-
-    if not device.alarm_enabled:
-        reenable_alarm_later(device.id)
-
-    return {"alarm_enabled": device.alarm_enabled}
-
-# --- Инициализация при старте ---
 @app.on_event("startup")
 def on_startup():
     db = SessionLocal()
     init_devices(db)
     db.close()
-
-# --- Запуск приложения ---
-# Для запуска используйте команду: uvicorn main:app --reload
