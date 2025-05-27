@@ -64,9 +64,8 @@ Base.metadata.create_all(bind=engine)
 class UserCreate(BaseModel):
     username: str
     password: str
-class UserLogin(BaseModel):
-    username: str
-    password: str
+class DeviceKeyRequest(BaseModel):
+    unique_key: str
 
 
 class UserOut(BaseModel):
@@ -254,24 +253,29 @@ def login_for_access_token(user_in: UserLogin, db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer"}
 
 # Добавление устройства
-@app.post("/devices/", response_model=DeviceOut)
-def add_device(device: DeviceCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    existing = db.query(Device).filter(Device.unique_key == device.unique_key).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Device with this unique key already exists")
-    new_device = Device(
-        name=device.name,
-        unique_key=device.unique_key,
-        pin_code=device.pin_code,
-        pin_change_key=device.pin_change_key,
-        active=True,
-        alarm_enabled=True,
-        owner_id=current_user.id
-    )
-    db.add(new_device)
-    db.commit()
-    db.refresh(new_device)
-    return new_device
+@app.post("/users/{user_id}/devices/", response_model=DeviceOut)
+def add_or_attach_device(
+    user_id: int,
+    req: DeviceKeyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Проверяем, что текущий пользователь имеет право добавлять устройства для указанного пользователя
+    if current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to add devices for this user")
+
+    device = db.query(Device).filter(Device.unique_key == req.unique_key).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device with this unique key not found")
+
+    if device.owner_id is None:
+        device.owner_id = user_id  # Привязываем устройство к указанному пользователю
+        db.commit()
+        db.refresh(device)
+    elif device.owner_id != user_id:
+        raise HTTPException(status_code=400, detail="Device already assigned to another user")
+
+    return device
 
 # Получение списка устройств пользователя
 @app.get("/devices/", response_model=List[DeviceOut])
