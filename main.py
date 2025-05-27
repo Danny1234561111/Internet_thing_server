@@ -120,8 +120,7 @@ class ChangePasswordRequest(BaseModel):
 
 class EventPost(BaseModel):
     unique_key: str
-    event_type: str  # "accel", "sound"
-    timestamp: Optional[datetime] = None
+    event_type: str
 
 class AlarmToggleRequest(BaseModel):
     unique_key: str
@@ -337,7 +336,8 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Device not found")
     if not device.active:
         raise HTTPException(status_code=400, detail="Device inactive")
-    now = event.timestamp or datetime.utcnow()
+
+    now = datetime.utcnow()  # всегда текущее время сервера
 
     if event.event_type == "accel":
         device.last_accel_event = now
@@ -355,6 +355,7 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
                 db.commit()
     else:
         raise HTTPException(status_code=400, detail="Unknown event_type")
+
     db.commit()
     return {"status": "event recorded"}
 
