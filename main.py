@@ -228,15 +228,21 @@ def add_device(device_in: DeviceUpdate, current_user: User = Depends(get_current
 def list_devices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return current_user.devices
 
+
 @app.post("/devices/check_pin")
 def check_pin(req: PinCheckRequest, unique_key: str, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.unique_key == unique_key).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+
     correct = req.pin_code == device.pin_code
-    log = DeviceLog(device_id=device.id, event_type="pin_check", info=f"PIN correct: {correct}")
+    current_time = datetime.utcnow()
+
+    # Логируем событие pin_check
+    log = DeviceLog(device_id=device.id, event_type="pin_check", timestamp=current_time, info=f"PIN correct: {correct}")
     db.add(log)
     db.commit()
+
     return {"pin_valid": correct}
 
 @app.post("/devices/change_pin")
@@ -264,18 +270,32 @@ def change_device_password(req: ChangePasswordRequest, current_user: User = Depe
     db.commit()
     return {"status": "Password changed successfully"}
 
+@app.post("/devices/disarm")
+def disarm_device(key: LogsRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    device = db.query(Device).filter(Device.unique_key == key.unique_key).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
 
+    # Логируем событие pin_check с info, что отключение по пользователю
+    current_time = datetime.utcnow()
+    log = DeviceLog(
+        device_id=device.id,
+        event_type="pin_check",
+        timestamp=current_time,
+        info=f"Disarmed by user {current_user.username}"
+    )
+    db.add(log)
+    db.commit()
+
+    return {"status": "device disarmed", "user": current_user.username}
 @app.post("/events/")
 def post_event(event: EventPost, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.unique_key == event.unique_key).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Получаем текущее время
     current_time = datetime.utcnow()
     log = DeviceLog(device_id=device.id, event_type=event.event_type, timestamp=current_time)
-
-    # Сохраняем лог события
     db.add(log)
     db.commit()
 
@@ -288,8 +308,15 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
             DeviceLog.timestamp >= current_time - timedelta(minutes=5)
         ).first()
 
-        # Если событие 'danger' не было зарегистрировано недавно, проверяем 'accel'
-        if not recent_danger:
+        # Проверяем, было ли событие 'pin_check' за последние 3 минуты
+        recent_pin_check = db.query(DeviceLog).filter(
+            DeviceLog.device_id == device.id,
+            DeviceLog.event_type == 'pin_check',
+            DeviceLog.timestamp >= current_time - timedelta(minutes=3)
+        ).first()
+
+        # Если событие 'danger' не было зарегистрировано недавно и 'pin_check' не произошло за 3 минуты
+        if not recent_danger and not recent_pin_check:
             # Находим последнее событие 'accel' для этого устройства
             recent_accel = db.query(DeviceLog).filter(
                 DeviceLog.device_id == device.id,
@@ -304,6 +331,7 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
                 db.commit()
 
     return {"status": "event recorded"}
+
 
 @app.get("/logs/")
 def get_logs(key: LogsRequest, db: Session = Depends(get_db)):

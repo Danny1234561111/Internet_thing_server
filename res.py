@@ -53,6 +53,13 @@ def change_pin(token, unique_key, old_pin, new_pin):
     resp = requests.post(url, json=data, headers=headers)
     print("Change PIN:", resp.status_code, resp.json())
     return resp
+def disarm(token, unique_key):
+    url = f"{BASE_URL}/devices/disarm"
+    headers = {"Authorization": f"Bearer {token}"}
+    data = {"unique_key": unique_key}
+    resp = requests.post(url, json=data, headers=headers)
+    print("Disarm Signalizetion:", resp.status_code, resp.json())
+    return resp
 
 def change_password(token, unique_key, old_password, new_password):
     url = f"{BASE_URL}/devices/change_password"
@@ -97,6 +104,7 @@ if __name__ == "__main__":
 
     # 6. Изменение PIN-кода
     change_pin(token, "device_key_123", "4321", "4321")
+    disarm(token, "device_key_123")
 
     # 8. Отправка события
     post_event("device_key_123", "accel")
