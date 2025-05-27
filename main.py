@@ -64,6 +64,10 @@ Base.metadata.create_all(bind=engine)
 class UserCreate(BaseModel):
     username: str
     password: str
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
 
 class UserOut(BaseModel):
     id: int
@@ -235,8 +239,8 @@ def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
 
 # Аутентификация и получение токена
 @app.post("/token", response_model=Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = authenticate_user(db, form_data.username, form_data.password)
+def login_for_access_token(user_in: UserLogin, db: Session = Depends(get_db)):
+    user = authenticate_user(db, user_in.username, user_in.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
