@@ -8,6 +8,7 @@ from datetime import datetime
 import threading
 from passlib.context import CryptContext
 import logging
+
 # Настройки базы данных
 DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -20,7 +21,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # Настройка хеширования паролей
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
 # --- Модели БД ---
 class User(Base):
     __tablename__ = "users"
@@ -28,7 +28,6 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)
     devices = relationship("Device", back_populates="owner")
-
 
 class Device(Base):
     __tablename__ = "devices"
@@ -46,7 +45,6 @@ class Device(Base):
     owner = relationship("User", back_populates="devices")
     logs = relationship("DeviceLog", back_populates="device")
 
-
 class DeviceLog(Base):
     __tablename__ = "device_logs"
     id = Column(Integer, primary_key=True, index=True)
@@ -57,15 +55,12 @@ class DeviceLog(Base):
 
     device = relationship("Device", back_populates="logs")
 
-
 Base.metadata.create_all(bind=engine)
-
 
 # --- Схемы Pydantic ---
 class UserCreate(BaseModel):
     username: str
     password: str
-
 
 class UserOut(BaseModel):
     id: int
@@ -74,13 +69,11 @@ class UserOut(BaseModel):
     class Config:
         orm_mode = True
 
-
 class DeviceCreate(BaseModel):
     name: str
     unique_key: str
     pin_code: constr(min_length=4, max_length=4)
     pin_change_key: str
-
 
 class DeviceOut(BaseModel):
     id: int
@@ -92,10 +85,8 @@ class DeviceOut(BaseModel):
     class Config:
         orm_mode = True
 
-
 class PinCheckRequest(BaseModel):
     pin_code: constr(min_length=4, max_length=4)
-
 
 class PinChangeRequest(BaseModel):
     unique_key: str
@@ -103,30 +94,25 @@ class PinChangeRequest(BaseModel):
     new_pin: constr(min_length=4, max_length=4)
     pin_change_key: str
 
-
 class EventPost(BaseModel):
     unique_key: str
     event_type: str  # "accel", "sound"
     timestamp: Optional[datetime] = None
-
 
 class AlarmToggleRequest(BaseModel):
     unique_key: str
     pin_code: Optional[constr(min_length=4, max_length=4)] = None
     pin_change_key: Optional[str] = None
 
-
 class LogsRequest(BaseModel):
     unique_key: str
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
 
-
 class LogsResponse(BaseModel):
     event_type: str
     timestamp: datetime
     info: Optional[str]
-
 
 # --- Зависимости ---
 def get_db():
@@ -136,18 +122,16 @@ def get_db():
     finally:
         db.close()
 
-
 # --- Хеширование паролей ---
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
-
 # --- Регистрация пользователя ---
 logger = logging.getLogger(__name__)
+
 @app.post("/register", response_model=UserOut)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == user.username).first()
@@ -168,14 +152,15 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
     return new_user
 
-
 # --- Аутентификация ---
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
+
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 @app.post("/token", response_model=TokenResponse)
 def login(login_request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == login_request.username).first()
@@ -185,14 +170,12 @@ def login(login_request: LoginRequest, db: Session = Depends(get_db)):
     token = f"token-{user.username}"  # Здесь должен быть более безопасный подход к созданию токенов
     return {"access_token": token, "token_type": "bearer"}
 
-
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     username = token.split('-')[1]  # Извлечение имени пользователя из токена
     user = db.query(User).filter(User.username == username).first()
     if not user:
         raise HTTPException(status_code=401, detail="User  not found")
     return user
-
 
 # --- Логика устройства и сигнализации ---
 @app.post("/devices/", response_model=DeviceOut)
@@ -214,11 +197,9 @@ def add_device(device: DeviceCreate, current_user: User = Depends(get_current_us
     db.refresh(new_device)
     return new_device
 
-
 @app.get("/devices/", response_model=List[DeviceOut])
 def list_devices(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Device).filter(Device.owner_id == current_user.id).all()
-
 
 @app.post("/devices/{device_id}/check_pin")
 def check_pin(device_id: int, req: PinCheckRequest, current_user: User = Depends(get_current_user),
@@ -233,7 +214,6 @@ def check_pin(device_id: int, req: PinCheckRequest, current_user: User = Depends
     db.add(log)
     db.commit()
     return {"pin_valid": correct}
-
 
 @app.post("/devices/change_pin")
 def change_pin(req: PinChangeRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -250,7 +230,6 @@ def change_pin(req: PinChangeRequest, current_user: User = Depends(get_current_u
     db.add(log)
     db.commit()
     return {"status": "PIN changed successfully"}
-
 
 # --- Обработка событий с устройств ---
 @app.post("/events/")
@@ -282,7 +261,6 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "event recorded"}
 
-
 # --- Получение логов входов и выходов ---
 @app.post("/logs/", response_model=List[LogsResponse])
 def get_logs(req: LogsRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -297,7 +275,6 @@ def get_logs(req: LogsRequest, current_user: User = Depends(get_current_user), d
     logs = query.order_by(DeviceLog.timestamp.desc()).all()
     return logs
 
-
 # --- Отключение и автоматическое включение сигнализации ---
 def reenable_alarm_later(device_id: int, delay_sec=300):
     def task():
@@ -306,10 +283,9 @@ def reenable_alarm_later(device_id: int, delay_sec=300):
         if device:
             device.alarm_enabled = True
             db.commit()
-            db.close()
+        db.close()
 
     threading.Timer(delay_sec, task).start()
-
 
 @app.post("/devices/toggle_alarm")
 def toggle_alarm(req: AlarmToggleRequest, current_user: User = Depends(get_current_user),
