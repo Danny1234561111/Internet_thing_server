@@ -1,6 +1,6 @@
 import requests
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "https://internet-thing-server-1-wtlb.onrender.com"
 
 def register_user(username, password):
     url = f"{BASE_URL}/users/"
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     register_user("testuser2", "testpass2")
 
     # 2. Получение токена
-    token = get_token("testuser2", "testpass2")
+    token = get_token("1","1")
     if not token:
         exit(1)
 

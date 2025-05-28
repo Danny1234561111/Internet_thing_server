@@ -341,22 +341,24 @@ def post_event(event: EventPost, db: Session = Depends(get_db)):
 
 
 @app.get("/logs/")
-def get_logs(key: LogsRequest, db: Session = Depends(get_db)):
-    device = db.query(Device).filter(Device.unique_key == key.unique_key).first()
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
+def get_logs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Получаем все устройства, принадлежащие текущему пользователю
+    user_devices = current_user.devices
+
+    if not user_devices:
+        raise HTTPException(status_code=404, detail="No devices found for this user")
 
     # Получаем текущее время
     current_time = datetime.utcnow()
-    # Получаем события 'danger' за последние 5 минут
+
+    # Получаем события 'danger' за последние 5 минут для всех устройств пользователя
     logs = db.query(DeviceLog).filter(
-        DeviceLog.device_id == device.id,
+        DeviceLog.device_id.in_([device.id for device in user_devices]),
         DeviceLog.event_type == 'danger',
         DeviceLog.timestamp >= current_time - timedelta(minutes=5)
     ).all()
 
     return logs
-
 
 
 @app.on_event("startup")
