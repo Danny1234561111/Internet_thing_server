@@ -1,6 +1,6 @@
 import requests
 
-BASE_URL = "https://internet-thing-server-1-wtlb.onrender.com"
+BASE_URL = "http://127.0.0.1:8000"
 
 def register_user(username, password):
     url = f"{BASE_URL}/users/"
@@ -77,8 +77,8 @@ def post_event(unique_key, event_type):
 
 def get_logs(unique_key):
     url = f"{BASE_URL}/logs/"
-    headers = {}
-    data = {"unique_key": unique_key}
+    headers = {"Authorization": f"Bearer {token}"}
+    data = {}
     resp = requests.get(url, json=data, headers=headers)
     print("Get logs:", resp.status_code, resp.json())
     return resp
@@ -94,31 +94,23 @@ def get_pin_checks(unique_key):
 if __name__ == "__main__":
     # 1. Регистрация пользователя
     register_user("testuser2", "testpass2")
-
     # 2. Получение токена
-    token = get_token("1","1")
+    token = get_token("testuser2","testpass2")
     if not token:
         exit(1)
-
     # 3. Добавление устройства
     add_device(token,"device_key_456")
-
     # 4. Получение списка устройств
     list_devices(token)
-
     # 5. Проверка PIN-кода
     # check_pin("device_key_456", "0000")
-
     # 6. Изменение PIN-кода
     change_pin(token, "device_key_456", "0000", "0000")
-
     # 8. Отправка события
     post_event("device_key_456", "accel")
-    disarm(token, "device_key_456")
+    # disarm(token, "device_key_456")
     post_event("device_key_456", "move")
-
-    # 9. Получение логов
-    get_logs("device_key_456")
-
-    get_logs("device_key_456")
+    # 9. Прослушка сигналов опасности пользователю
+    get_logs(token)
+    # 10. Вывод входов и выходов с одного из устройств
     get_pin_checks("device_key_456")
