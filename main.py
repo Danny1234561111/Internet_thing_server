@@ -272,7 +272,7 @@ def change_device_password(req: ChangePasswordRequest, current_user: User = Depe
     device.pin_code = req.new_password
     db.commit()
     return {"status": "Password changed successfully"}
-@app.get("/devices/pin_checks/")
+@app.post("/devices/pin_checks/")
 def get_pin_checks(key: LogsRequest, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.unique_key == key.unique_key).first()
     pin_checks = db.query(DeviceLog).filter(
