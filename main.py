@@ -277,7 +277,7 @@ def get_pin_checks(key: LogsRequest, db: Session = Depends(get_db)):
     device = db.query(Device).filter(Device.unique_key == key.unique_key).first()
     pin_checks = db.query(DeviceLog).filter(
         DeviceLog.device_id ==device.id,
-        DeviceLog.event_type == 'pin_check'
+        DeviceLog.event_type.in_(['pin_check', 'danger'])
     ).all()
 
     if not pin_checks:
