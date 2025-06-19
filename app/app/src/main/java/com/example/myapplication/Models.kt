@@ -1,6 +1,7 @@
 package com.example.myapplication
 
 import android.os.Parcelable
+import com.google.gson.annotations.SerializedName
 import java.io.Serializable
 
 //import java.io.Serializable
@@ -25,14 +26,6 @@ data class DeviceOut(
 ) : Serializable
 data class PinChecksRequest(val pin_code: String, val unique_key: String)
 
-data class PinCheckEvent(
-    val device_id: Int,
-    val event_type: String,
-    val info: String,
-    val timestamp: String,
-    val id: Int
-)
-
 
 
 data class PinCheckResponse(val pin_valid: Boolean)
@@ -40,7 +33,21 @@ data class PinChangeRequest(val unique_key: String, val old_pin: String, val new
 data class ChangePasswordRequest(val unique_key: String, val old_password: String, val new_password: String)
 data class LogsRequest(val unique_key: String)
 data class EventPost(val unique_key: String, val event_type: String)
-data class LogsResponse(val event_type: String, val timestamp: String, val info: String?)
-
+data class LogsResponse(
+    val timestamp: String,
+    val id: Int,
+    @SerializedName("device_id") // Используй это, если ключ JSON отличается
+    val deviceId: Int,
+    @SerializedName("event_type")
+    val eventType: String,
+    val info: String? // Сделай допускающим null, если значение может быть null
+)
+data class PinCheckEvent(
+    val device_id: Int,
+    val event_type: String,
+    val info: String,
+    val timestamp: String,
+    val id: Int
+)
 
 

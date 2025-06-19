@@ -3,6 +3,7 @@ package com.example.myapplication
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -16,7 +17,6 @@ class DeviceDetailActivity : AppCompatActivity() {
 
     private lateinit var deviceNameTv: TextView
     private lateinit var deviceKeyTv: TextView
-    private lateinit var devicePinTv: TextView
     private lateinit var changePinBtn: Button
     private lateinit var disarmBtn: Button
     private lateinit var eventsRecyclerView: RecyclerView
@@ -29,10 +29,8 @@ class DeviceDetailActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_device_detail)
-
         deviceNameTv = findViewById(R.id.deviceNameTextView)
         deviceKeyTv = findViewById(R.id.deviceKeyTextView)
-        devicePinTv = findViewById(R.id.devicePinTextView)
         changePinBtn = findViewById(R.id.changePinButton)
         disarmBtn = findViewById(R.id.disarmButton)
         eventsRecyclerView = findViewById(R.id.pinCheckEventsRecyclerView)
@@ -80,24 +78,30 @@ class DeviceDetailActivity : AppCompatActivity() {
     private fun updateDeviceDetails() {
         deviceNameTv.text = device?.name ?: "Device Name Not Available"
         deviceKeyTv.text = "Unique Key: ${device?.unique_key ?: "Not Available"}"
-        devicePinTv.text = "PIN Code: ${device?.pin_code ?: "Not Available"}"
     }
 
     private fun loadPinCheckEvents(uniqueKey: String) {
-        RetrofitClient.apiService.getPinChecks(uniqueKey).enqueue(object : Callback<List<PinCheckEvent>> {
-            override fun onResponse(call: Call<List<PinCheckEvent>>, response: Response<List<PinCheckEvent>>) {
+        val request = LogsRequest(unique_key = uniqueKey)
+        Log.d("DeviceDetail","АЛЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕЕ")
+        RetrofitClient.apiService.getPinChecks(request).enqueue(object : Callback<List<PinCheckEvent>> {
+            override fun onResponse(
+                call: Call<List<PinCheckEvent>>,
+                response: Response<List<PinCheckEvent>>
+            ) {
                 if (response.isSuccessful) {
                     val events = response.body()
                     if (events != null) {
                         eventsAdapter.submitList(events)
-                    } else {
-                        Toast.makeText(this@DeviceDetailActivity, "События не найдены", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    Toast.makeText(this@DeviceDetailActivity, "Ошибка загрузки событий: ${response.message()}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@DeviceDetailActivity,
+                        "Ошибка загрузки событий: ${response}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    Log.d("ОШИБКА ЗАГРУЗКИ ВХОДОВ", "${response}")
                 }
             }
-
             override fun onFailure(call: Call<List<PinCheckEvent>>, t: Throwable) {
                 Toast.makeText(this@DeviceDetailActivity, "Ошибка: ${t.message}", Toast.LENGTH_SHORT).show()
             }
@@ -114,6 +118,7 @@ class DeviceDetailActivity : AppCompatActivity() {
                     loadPinCheckEvents(uniqueKey)
                 } else {
                     Toast.makeText(this@DeviceDetailActivity, "Ошибка отключения: ${response.message()}", Toast.LENGTH_SHORT).show()
+
                 }
             }
 

@@ -1,32 +1,118 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
+    android:background="#F0F0F0"
     android:padding="16dp">
 
-    <EditText
-        android:id="@+id/usernameEditText"
-        android:layout_width="match_parent"
+    <LinearLayout
+        android:id="@+id/container"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:hint="Имя пользователя" />
+        android:orientation="vertical"
+        android:background="@android:color/white"
+        android:padding="24dp"
+        android:elevation="8dp"
+        android:layout_marginVertical="32dp"
+        android:maxWidth="320dp"
+        android:minWidth="280dp"
+        android:clipToPadding="false"
+        android:clipChildren="false"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintVertical_bias="0.5"
+        app:layout_constraintHorizontal_bias="0.5">
 
-    <EditText
-        android:id="@+id/passwordEditText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Пароль"
-        android:inputType="textPassword" />
+        <!-- Заголовок -->
+        <TextView
+            android:id="@+id/tv_login_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Добро пожаловать!"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="#222222"
+            android:layout_gravity="center_horizontal"
+            android:paddingBottom="8dp" />
 
-    <Button
-        android:id="@+id/loginButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Вход" />
+        <!-- Подзаголовок -->
+        <TextView
+            android:id="@+id/tv_login_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Пожалуйста, войдите в аккаунт"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_gravity="center_horizontal"
+            android:paddingBottom="24dp" />
 
-    <Button
-        android:id="@+id/registerButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Регистрация" />
-</LinearLayout>
+        <!-- Имя пользователя -->
+        <EditText
+            android:id="@+id/usernameEditText"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:hint="Имя пользователя"
+            android:inputType="textPersonName"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:layout_marginBottom="16dp"
+            android:textColor="#000000"
+            android:textSize="16sp" />
+
+        <!-- Пароль -->
+        <EditText
+            android:id="@+id/passwordEditText"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:hint="Пароль"
+            android:inputType="textPassword"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:layout_marginBottom="16dp"
+            android:textColor="#000000"
+            android:textSize="16sp" />
+
+        <!-- Чекбокс Запомнить меня -->
+        <CheckBox
+            android:id="@+id/rememberMeCheckbox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Запомнить меня"
+            android:textColor="#444444"
+            android:layout_marginBottom="24dp"
+            android:layout_gravity="start" />
+
+        <!-- Кнопка Вход -->
+        <Button
+            android:id="@+id/loginButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="Вход"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#6200EE"
+            android:textSize="18sp"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Кнопка Регистрация -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/registerButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="Регистрация"
+            android:textColor="#000000"
+            android:backgroundTint="#FFFFFF"
+            app:strokeColor="#000000"
+            app:strokeWidth="1dp"
+            android:textSize="18sp"
+            android:fontFamily="sans-serif-medium" />
+
+
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

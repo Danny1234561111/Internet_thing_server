@@ -12,7 +12,8 @@ constraintlayout = "2.2.1"
 okhttp = "4.10.0"
 retrofit = "2.9.0"
 recyclerview = "1.2.1"
-volley = "1.2.1"  # <- добавлено
+volley = "1.2.1"
+lifecycleService = "2.9.1"  # <- добавлено
 
 [libraries]
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
@@ -28,6 +29,7 @@ material = { group = "com.google.android.material", name = "material", version.r
 androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 volley = { group = "com.android.volley", name = "volley", version.ref = "volley" }
+androidx-lifecycle-service = { group = "androidx.lifecycle", name = "lifecycle-service", version.ref = "lifecycleService" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -8,7 +8,7 @@ interface ApiService {
     @POST("users/")
     fun registerUser(@Body userCreate: UserCreate): Call<UserOut>
 
-    @POST("token")
+    @POST("token/")
     fun login(@Body userLogin: UserLogin): Call<Token>
 
     @POST("devices/")
@@ -36,9 +36,9 @@ interface ApiService {
         @Body changePasswordRequest: ChangePasswordRequest
     ): Call<Map<String, String>>
 
-    @GET("devices/{unique_key}/pin_checks/")
+    @POST("devices/pin_checks")
     fun getPinChecks(
-        @Path("unique_key") uniqueKey: String,
+        @Body logsRequest: LogsRequest,
     ): Call<List<PinCheckEvent>>
 
     @POST("devices/disarm")
@@ -50,9 +50,9 @@ interface ApiService {
     @POST("events/")
     fun postEvent(@Body eventPost: EventPost): Call<Map<String, String>>
 
-    @POST("logs/")
+    @GET("logs/")
     fun getLogs(
         @Header("Authorization") token: String,
-        @Body logsRequest: LogsRequest
     ): Call<List<LogsResponse>>
+
 }
