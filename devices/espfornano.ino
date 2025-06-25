@@ -11,23 +11,18 @@ const char* serverURL = "https://internet-thing-server.onrender.com/devices/chan
 const char* token = "YOUR_AUTH_TOKEN";
 const char* uniqueKey = "YOUR_DEVICE_UNIQUE_KEY";
 
-// --- LED Pins ---
-const int greenLedPin = D4;  // Pin для зеленого светодиода
-const int redLedPin = D7;    // Pin для красного светодиода
+const int greenLedPin = D4;
+const int redLedPin = D7;
 
-// --- Serial Communication ---
 const int serialBaudRate = 115200;
 
-// --- Password Buffer ---
 const int passwordLength = 4;
 char passwordBuffer[passwordLength + 1]; // +1 for null terminator '\0'
 int passwordIndex = 0;
 
-// --- WiFi Credentials ---
 String savedSSID = "";
 String savedPassword = "";
 
-// --- Web Server ---
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 
@@ -81,9 +76,6 @@ void loop() {
   server.handleClient();
   dnsServer.processNextRequest();
 }
-
-// --- WiFi Setup Functions ---
-
 void setupAccessPoint() {
   Serial.print("Setting up Access Point...");
   WiFi.mode(WIFI_AP);
@@ -91,11 +83,6 @@ void setupAccessPoint() {
   Serial.println("OK");
 
   dnsServer.start(53, "*", WiFi.softAPIP()); // Перенаправляем все DNS-запросы на IP точки доступа
-}
-
-void loadWiFiCredentials() {
-  // TODO: Реализуйте загрузку из EEPROM или SPIFFS
-  // Для примера оставим пустым
 }
 
 void connectToSavedWiFi() {
@@ -126,14 +113,12 @@ void connectToSavedWiFi() {
   }
 }
 
-// --- Serial Password Functions ---
 
 void resetPassword() {
   memset(passwordBuffer, 0, sizeof(passwordBuffer));
   passwordIndex = 0;
 }
 
-// --- Networking Functions ---
 
 void checkPassword(const char* enteredPin) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -315,12 +300,10 @@ void handleConnect() {
       Serial.println("\nWiFi connected!");
       Serial.print("IP: ");
       Serial.println(WiFi.localIP());
-      // Здесь можно сохранить данные в EEPROM/SPIFFS для постоянного хранения
       delay(2000);
       ESP.restart();
     } else {
       Serial.println("\nFailed to connect.");
-      // Возвращаемся в режим AP
       WiFi.mode(WIFI_AP);
       WiFi.softAP(apSSID, apPassword);
       dnsServer.start(53, "*", WiFi.softAPIP());
